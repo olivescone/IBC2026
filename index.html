@@ -68,7 +68,8 @@ Does Anatomical Proximity Predict Survival Model Transferability Across HPB Canc
 
 <div class="pnl" id="t3d">
 <div class="ctrl" id="c3d"></div>
-<div class="grid2"><div id="plot3d" style="height:560px"></div><div id="sb3d"></div></div></div>
+<div id="plot3d" style="height:520px"></div>
+<div id="transferTable" style="margin-top:12px;overflow-x:auto"></div></div>
 
 <div class="pnl" id="tf1"><div class="ctrl" id="cf1"></div><div id="plotF1" style="height:420px"></div>
 <p class="hint" style="text-align:center;margin-top:4px">Error bars: min&ndash;max across target domains. Best observed source selected post-hoc.</p></div>
@@ -95,7 +96,7 @@ const EPL={OS:"Overall survival",CSS:"Cancer-specific death",OC:"Other-cause dea
 const NS=[100,200,300,500,700,1000,2000];
 const RCOL={1:"#2ca02c",2:"#98df8a",3:"#ff7f0e",4:"#ffbb78",5:"#d62728"};
 
-let ep3d="OS",n3d=100,tgt3d="All",epF1="OS",epF2="OS",epTB="OS",nTB=100;
+let ep3d="OS",n3d=100,epF1="OS",epF2="OS",epTB="OS",nTB=100;
 let cam3d=null;
 
 function nf(t){let nr=null,fr=null,mn=1e9,mx=-1;DOMS.forEach(d=>{if(d!==t){const v=DM[t]?.[d]??999;if(v<mn){mn=v;nr=d}if(v>mx){mx=v;fr=d}}});return{near:nr,far:fr}}
@@ -118,81 +119,49 @@ function mkCtrl(el,curEp,curN,onEp,onN,showN,extra){
   if(extra)extra(el);
 }
 
-// ===== 3D — GRADIENT ARROWS =====
+// ===== 3D — NETWORK GRAPH =====
 function build3D(){
   const traces=[];
-  // Organ meshes
   ORGANS.forEach(o=>{const m=MS[o];if(!m)return;const s=OST[o];
     traces.push({type:"mesh3d",x:m.x,y:m.y,z:m.z,i:m.i,j:m.j,k:m.k,
       color:s.c,opacity:s.o,flatshading:true,hoverinfo:"skip",showlegend:false,showscale:false})});
-  // Domain markers
+  // Domain markers — no text labels, hover only
   traces.push({type:"scatter3d",x:DOMS.map(d=>A[d][0]),y:DOMS.map(d=>A[d][1]),z:DOMS.map(d=>A[d][2]),
-    mode:"markers+text",text:DOMS.map(d=>DL[d]),textposition:"top center",textfont:{size:11,color:"#1e293b"},
-    marker:{size:9,color:"rgba(255,255,255,.96)",line:{color:"black",width:2.4}},
+    mode:"markers",text:DOMS.map(d=>DL[d]),
+    marker:{size:10,color:DOMS.map((_,i)=>["#c0392b","#e67e22","#f39c12","#d4ac0d","#8e44ad","#27ae60"][i]),
+      line:{color:"#fff",width:2}},
     showlegend:false,hoverinfo:"text"});
 
-  const targets=tgt3d==="All"?DOMS:[tgt3d];
-  targets.forEach(tgt=>{
-    // Get all 5 source gains + distances
-    const sources=DOMS.filter(d=>d!==tgt).map(s=>{
-      const g=TG[`${ep3d}_${n3d}_${tgt}_${s}`];
-      const dist=DM[tgt]?.[s]??999;
-      return{s,g:g??0,dist};
-    });
-    const maxG=Math.max(...sources.map(x=>Math.abs(x.g)),0.001);
-    const best=bsrc(ep3d,n3d,tgt);
+  // Collect all edges and normalize
+  const edges=[];
+  DOMS.forEach(tgt=>{DOMS.forEach(src=>{
+    if(src===tgt)return;
+    const g=TG[`${ep3d}_${n3d}_${tgt}_${src}`];
+    if(g===undefined)return;
+    edges.push({src,tgt,g,dist:DM[tgt]?.[src]??999});
+  })});
+  const allG=edges.map(e=>e.g).filter(x=>x!=null);
+  const minG=Math.min(...allG),maxG=Math.max(...allG);
+  const range=maxG-minG||0.001;
 
-    if(tgt3d==="All"){
-      // All-targets mode: only nearest arrow, gradient thickness
-      const{near}=nf(tgt);
-      const src=sources.find(x=>x.s===near);
-      if(!src)return;
-      const nib=best===near;
-      const w=Math.max(2,Math.min(10,(src.g/maxG)*10));
-      const sp=A[src.s],tp=A[tgt];
-      traces.push({type:"scatter3d",
-        x:[sp[0],tp[0]],y:[sp[1],tp[1]],z:[sp[2],tp[2]],
-        mode:"lines+markers",
-        line:{color:nib?"#1f77b4":"#aec7e8",width:w,dash:nib?"solid":"dash"},
-        marker:{size:[0,w+4],color:nib?"#1f77b4":"#aec7e8",symbol:nib?"diamond":"diamond-open"},
-        showlegend:false,
-        hovertext:`${DL[src.s]} &rarr; ${DL[tgt]}<br>&Delta;C=${src.g.toFixed(4)}<br>D=${src.dist.toFixed(3)}<br>${nib?"✓ Nearest=Best":"✗ Best="+DL[best]}`,
-        hoverinfo:"text"}
-      );
-    }else{
-      // Single-target mode: ALL 5 sources, gradient thickness+opacity
-      sources.sort((a,b)=>b.g-a.g);
-      sources.forEach((src,idx)=>{
-        const w=Math.max(1.5,Math.min(12,(src.g/maxG)*12));
-        const op=Math.max(0.3,Math.min(1,(src.g/maxG)));
-        // Color: blue scale — darker = higher gain
-        const t=src.g/maxG;
-        const cr=Math.round(31+200*(1-t)),cg2=Math.round(119+136*(1-t)),cb=Math.round(180+40*(1-t));
-        const col=`rgb(${cr},${cg2},${cb})`;
-        const sp=A[src.s],tp=A[tgt];
-        const isBest=src.s===best;
-        const isNear=src.s===nf(tgt).near;
-        const mid=sp.map((v,i)=>(v+tp[i])/2);
-        traces.push({type:"scatter3d",
-          x:[sp[0],tp[0]],y:[sp[1],tp[1]],z:[sp[2],tp[2]],
-          mode:"lines+markers",
-          line:{color:col,width:w},
-          marker:{size:[0,w+3],color:col,symbol:isBest?"diamond":"circle"},
-          showlegend:false,
-          hovertext:`${DL[src.s]} &rarr; ${DL[tgt]}<br>&Delta;C=${src.g.toFixed(4)}<br>D=${src.dist.toFixed(3)}<br>Rank ${idx+1}${isBest?" ★ BEST":""}${isNear?" (nearest)":""}`,
-          hoverinfo:"text"
-        });
-        // D label at midpoint
-        traces.push({type:"scatter3d",x:[mid[0]],y:[mid[1]],z:[mid[2]],mode:"text",
-          text:[`D=${src.dist.toFixed(2)}`],textfont:{size:9,color:col},showlegend:false,hoverinfo:"skip"});
-      });
-    }
+  edges.forEach(e=>{
+    const t=(e.g-minG)/range; // 0..1 normalized
+    const w=1+t*9; // width 1..10
+    // Color: dark navy(high) → light gray(low)
+    const r=Math.round(30+225*(1-t)),g2=Math.round(58+190*(1-t)),b=Math.round(95+155*(1-t));
+    const col=`rgb(${r},${g2},${b})`;
+    const sp=A[e.src],tp=A[e.tgt];
+    traces.push({type:"scatter3d",
+      x:[sp[0],tp[0]],y:[sp[1],tp[1]],z:[sp[2],tp[2]],
+      mode:"lines",line:{color:col,width:w},
+      showlegend:false,
+      hovertext:`${DL[e.src]} → ${DL[e.tgt]}<br>ΔC = ${e.g.toFixed(4)}<br>D = ${e.dist.toFixed(3)}`,
+      hoverinfo:"text"
+    });
   });
 
-  const ttl=tgt3d==="All"
-    ?`${EPL[ep3d]} | n=${n3d} &mdash; nearest source per target (thickness &prop; &Delta;C)`
-    :`${EPL[ep3d]} | n=${n3d} | Target: ${DL[tgt3d]} &mdash; all 5 sources (thickness &prop; &Delta;C)`;
-  Plotly.react("plot3d",traces,{title:{text:ttl,font:{size:12}},
+  Plotly.react("plot3d",traces,{
+    title:{text:`${EPL[ep3d]} | n = ${n3d}    Thicker/darker edge = higher transfer gain`,font:{size:12}},
     scene:{xaxis:{title:"",showbackground:false},yaxis:{title:"",showbackground:false},zaxis:{title:"",showbackground:false},
       aspectmode:"data",camera:cam3d||undefined},
     margin:{l:0,r:0,b:0,t:36},template:"plotly_white",uirevision:"keep"},{displaylogo:false,scrollZoom:true});
@@ -202,36 +171,55 @@ function build3D(){
   });
 }
 
-function renderSB(){
-  const sb=document.getElementById("sb3d");let mc=0;
-  const rows=DOMS.map(t=>{const{near}=nf(t);const b=bsrc(ep3d,n3d,t);const nib=b===near;if(nib)mc++;
-    const rk=rnks(t);const br=b?rk.findIndex(x=>x.d===b)+1:"-";
-    const bg=b?TG[`${ep3d}_${n3d}_${t}_${b}`]:null;return{t,near,b,nib,br,bg}});
-  const bgc=mc>=4?"#d1fae5":mc>=2?"#fffbeb":"#fee2e2";
-  let h=`<div class="matchbox" style="background:${bgc}">Nearest = Best: ${mc}/6<div class="s">${EPL[ep3d]} &middot; n=${n3d}</div></div>`;
-  h+=`<div class="card"><div class="ti">Reading guide</div>
-    <p style="margin:0 0 4px;font-size:10.5px"><b>All targets:</b> One arrow per target (nearest source). Thickness &prop; &Delta;C. Solid = nearest is best, dashed = not.</p>
-    <p style="margin:0;font-size:10.5px"><b>Single target:</b> All 5 source arrows shown. Thicker/darker = higher transfer gain. Hover for &Delta;C and distance.</p>
-    </div>`;
-  h+=`<div class="card"><div class="ti">Per-target breakdown</div><table class="tbl">
-    <tr><th>Target</th><th>Best</th><th>Rk</th><th>&Delta;C</th><th></th></tr>`;
-  rows.forEach(r=>{h+=`<tr style="cursor:pointer${tgt3d===r.t?";outline:2px solid var(--c1)":""}" onclick="tgt3d='${r.t}';update3D()">
-    <td>${DL[r.t]}</td><td style="font-size:10px">${DL[r.b]||"—"}</td>
-    <td>${r.br===1?"<b>1★</b>":r.br}</td><td class="mono">${r.bg!=null?(r.bg>0?"+":"")+r.bg.toFixed(4):"—"}</td>
-    <td class="${r.nib?"g":"r"}" style="font-weight:600">${r.nib?"✓":"✗"}</td></tr>`});
+function renderTransferTable(){
+  const el=document.getElementById("transferTable");
+  // For each target, sort sources by distance, show ΔC
+  // Collect all ΔC for color scale
+  const allVals=[];
+  DOMS.forEach(tgt=>{DOMS.forEach(src=>{if(src!==tgt){const g=TG[`${ep3d}_${n3d}_${tgt}_${src}`];if(g!==undefined)allVals.push(g)}})});
+  const minV=Math.min(...allVals),maxV=Math.max(...allVals),rangeV=maxV-minV||0.001;
+
+  const cellBg=(v)=>{
+    const t=(v-minV)/rangeV;
+    const r=Math.round(240-t*200),g=Math.round(245-t*175),b=Math.round(250-t*155);
+    return `rgb(${r},${g},${b})`;
+  };
+  const cellFg=(v)=>{const t=(v-minV)/rangeV;return t>0.5?"#fff":"#1e293b"};
+
+  let h=`<table class="tbl" style="font-size:11px">
+    <tr><th style="text-align:left;min-width:90px">Target</th>
+    <th colspan="5" style="text-align:center">Source domains (ordered by anatomical distance, nearest → farthest)</th></tr>
+    <tr><th></th>`;
+  // Column headers: Rank 1..5
+  for(let r=1;r<=5;r++) h+=`<th style="text-align:center;font-size:10px">Rank ${r}${r===1?" (nearest)":r===5?" (farthest)":""}</th>`;
+  h+=`</tr>`;
+
+  DOMS.forEach(tgt=>{
+    const sources=rnks(tgt); // sorted by distance
+    const best=bsrc(ep3d,n3d,tgt);
+    h+=`<tr><td style="font-weight:700;white-space:nowrap">${DL[tgt]}</td>`;
+    sources.forEach(src=>{
+      const g=TG[`${ep3d}_${n3d}_${tgt}_${src.d}`];
+      const isBest=src.d===best;
+      const bg=g!==undefined?cellBg(g):"#f9fafb";
+      const fg=g!==undefined?cellFg(g):"#6b7280";
+      h+=`<td style="text-align:center;background:${bg};color:${fg};padding:5px 4px;border:1px solid #e5e7eb;font-size:10px;line-height:1.4;min-width:100px">
+        <div style="font-weight:${isBest?700:400}">${DL[src.d]}${isBest?" ★":""}</div>
+        <div class="mono" style="font-size:10.5px">${g!==undefined?(g>0?"+":"")+g.toFixed(4):"—"}</div>
+        <div style="font-size:9px;opacity:.7">D = ${src.v.toFixed(3)}</div>
+      </td>`;
+    });
+    h+=`</tr>`;
+  });
   h+=`</table>`;
-  h+=`<button class="pill${tgt3d==="All"?" on":""}" style="margin-top:6px" onclick="tgt3d='All';update3D()">Show all targets</button></div>`;
-  sb.innerHTML=h;
+  h+=`<div class="hint" style="margin-top:6px">★ = empirically best source. Darker cell = higher ΔC. D = trunk-length-normalized physical distance. Each row: sources sorted nearest → farthest.</div>`;
+  el.innerHTML=h;
 }
+
 function update3D(){
   mkCtrl(document.getElementById("c3d"),ep3d,n3d,
-    e=>{ep3d=e;update3D()},n=>{n3d=n;update3D()},true,
-    el=>{const s=document.createElement("div");s.className="sep";el.appendChild(s);
-      const l=document.createElement("label");l.textContent="Target";el.appendChild(l);
-      const mk=(txt,on,fn)=>{const b=document.createElement("button");b.className="pill"+(on?" on":"");b.textContent=txt;b.onclick=fn;return b};
-      el.appendChild(mk("All",tgt3d==="All",()=>{tgt3d="All";update3D()}));
-      DOMS.forEach(d=>el.appendChild(mk(DL[d],tgt3d===d,()=>{tgt3d=d;update3D()})))});
-  build3D();renderSB()}
+    e=>{ep3d=e;update3D()},n=>{n3d=n;update3D()},true);
+  build3D();renderTransferTable()}
 
 // ===== FIG 1 =====
 function computeF1(e){return NS.map(n=>{
