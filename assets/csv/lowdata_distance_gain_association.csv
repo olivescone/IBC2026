@@ -1,0 +1,3 @@
+"endpoint","endpoint_label","n_source_target_pairs","spearman_rho_physical_distance_vs_gain","permutation_p_two_sided_physical_distance","permutation_p_directional_physical_distance","spearman_rho_distance_rank_vs_gain","permutation_p_two_sided_distance_rank","permutation_p_directional_distance_rank","expected_direction"
+"event_css","Cancer-specific survival",30,-0.33426230528361,0.0802,0.0432,-0.138881596644554,0.4724,0.238,"negative rho means closer anatomical distance is associated with higher transfer gain"
+"event_os","Overall survival",30,-0.322674545367112,0.0858,0.0428,-0.119819416712949,0.5296,0.2658,"negative rho means closer anatomical distance is associated with higher transfer gain"

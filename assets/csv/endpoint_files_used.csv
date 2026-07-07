@@ -1,0 +1,3 @@
+"endpoint","endpoint_label","source_target_gain_summary"
+"event_css","Cancer-specific survival","/home/bdsi_server/hoejun/Cox TL/Anatomical_distance/03. Results/results_distance_informed_transfer_by_endpoint/event_css/source_target_gain_summary.csv"
+"event_os","Overall survival","/home/bdsi_server/hoejun/Cox TL/Anatomical_distance/03. Results/results_distance_informed_transfer_by_endpoint/event_os/source_target_gain_summary.csv"
